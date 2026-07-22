@@ -1,6 +1,54 @@
 # PROGRESSO.md
 
-## Sessão 2026-07-22 — construção inicial
+## Sessão 2026-07-22 (parte 2) — verificação end-to-end depois de liberar disco
+
+Espaço em C: foi liberado (de ~67MB pra ~9,5GB livres), o que resolveu o `MemoryError`
+intermitente e permitiu instalar o Playwright. Isso possibilitou uma validação bem
+mais forte do que a da parte 1:
+
+### O que foi validado de verdade agora
+
+- **6 testes de integração novos** (`tests/test_pages_integration.py`) usando
+  `streamlit.testing.v1.AppTest` — rodam o código real das 3 páginas (não só as
+  funções puras), simulando clique de botão, preenchimento de campo, escolha de
+  candidato ambíguo no rádio, e conferindo o `log.txt` gravado. Cloudbeds/Sheets
+  são substituídos por dados fake nesse nível (não há API key real), mas todo o
+  resto — sessão, diff, confirmação, gravação em dry-run — é código de produção
+  rodando de verdade.
+- Isso **encontrou e corrigiu 2 bugs reais** antes de irem pra produção:
+  1. O campo "segundo dado" do Autopreenchimento sempre pré-preenchia com
+     e-mail/telefone, mesmo quando a coluna configurada como segunda checagem
+     era outra (ex.: CPF) — o match nunca fechava sozinho nesse caso. Corrigido
+     em `pages/2_Autopreenchimento.py` pra usar o valor já existente no campo
+     do Cloudbeds mapeado pra aquela coluna, com e-mail/telefone só como
+     fallback.
+  2. Quando dois candidatos ambíguos tinham nome, similaridade e status do
+     segundo dado idênticos (o caso clássico de homônimos — exatamente o
+     cenário que essa checagem existe pra cobrir), os rótulos do rádio de
+     escolha colidiam e o usuário não conseguia escolher entre eles de verdade.
+     Corrigido usando índice da lista como valor da opção em vez do texto
+     formatado.
+- **Navegador real** (Playwright + Chromium, headless): as 4 páginas (home +
+  3 funções) foram abertas de verdade, screenshot tirado de cada uma — sem
+  traceback visível, mensagens de "não configurado" aparecendo corretamente
+  onde esperado. Navegação real pela sidebar testada (clique em
+  "Autopreenchimento"). O toggle de dry-run foi clicado de verdade no DOM e
+  confirmado que a faixa muda de "MODO TESTE" (âmbar) pra "MODO PRODUÇÃO"
+  (vermelho) e volta.
+- `pytest` roda limpo e reproduzível agora (22 testes, antes tinha `MemoryError`
+  intermitente por falta de espaço em disco).
+
+### O que ainda NÃO foi validado (só isso depende de credencial real)
+
+- Nenhuma chamada real à API do Cloudbeds nem ao Google Sheets — segue
+  pendente por não haver API key/credencial disponível. Os testes de
+  integração cobrem toda a lógica em volta dessas chamadas (parsing,
+  matching, diff, log), mas não os nomes exatos de campo/endpoint contra uma
+  propriedade real.
+- O caminho de escrita real (`dry_run=False` de verdade) nunca gravou nada
+  no Cloudbeds de fato, só foi exercitado com a chamada de rede mockada.
+
+## Sessão 2026-07-22 (parte 1) — construção inicial
 
 ### O que foi validado de verdade nesta sessão
 
@@ -10,16 +58,11 @@
 - **Lint** (`ruff check .`): limpo, zero avisos.
 - **Sintaxe de todos os arquivos** (`py_compile`) e **boot real do servidor Streamlit** (`streamlit run app.py`, HTTP 200 na home) confirmados nesta máquina.
 
-### O que NÃO foi validado (pendente)
+### Aviso técnico (resolvido na parte 2)
 
-- **Nenhuma chamada real à API do Cloudbeds foi feita** — não havia API key disponível nesta sessão. Os nomes de endpoint (`getReservations`, `getReservation`, `putGuest`, `getCustomFields`, `getReservationNotes`, `postReservationNote`, `getRooms`) foram confirmados via documentação pública da Cloudbeds, mas os **nomes exatos dos campos de hóspede** (`guestCPF`, `guestPhone1`, `guestBirthdate`, etc., em `core/config.py` → `DEFAULT_FIELD_MAPPING`) são um ponto de partida e precisam ser confirmados com uma chamada de teste real antes de usar em produção — podem ser campos personalizados com nomes diferentes na propriedade específica.
-- **Nenhuma leitura real do Google Sheets foi feita** — sem credencial de service account disponível nesta sessão.
-- **Interface nunca foi aberta num navegador de verdade** — o boot do servidor foi confirmado via HTTP (curl), mas a instalação do Playwright (pra tirar screenshot e checar erros de renderização) falhou por falta de espaço em disco na máquina (ver aviso abaixo). As três páginas (`pages/1_Ocupacao.py`, `2_Autopreenchimento.py`, `3_Historico.py`) foram revisadas por leitura e passam no `py_compile`, mas o fluxo de clique real (buscar reserva → ver diff → confirmar) nunca rodou contra dados reais.
-- **Modo produção (dry-run desligado) nunca foi exercitado** — por não haver credenciais, todo o caminho de escrita real (`put_guest`, `post_reservation_note` com `dry_run=False`) só foi revisado por leitura de código, não executado.
-
-### Aviso técnico importante (fora do escopo deste projeto)
-
-O drive **C:** da máquina estava com **~67 MB livres** durante esta sessão — isso causou `MemoryError` intermitente do Python (provavelmente por falta de espaço pro arquivo de paginação do Windows crescer) e impediu a instalação do Chromium do Playwright. Vale liberar espaço em C: antes da próxima sessão de desenvolvimento, ou os problemas podem se repetir (e afetar outras coisas na máquina, não só este projeto).
+O drive **C:** da máquina estava com **~67 MB livres** durante a primeira parte desta
+sessão — causou `MemoryError` intermitente e impediu instalar o Playwright. Foi
+liberado espaço (ver acima) e o problema não voltou a ocorrer.
 
 ## Pendente (decisões do usuário, não técnicas)
 
@@ -27,4 +70,3 @@ O drive **C:** da máquina estava com **~67 MB livres** durante esta sessão —
 - [ ] Criar a service account do Google Cloud, compartilhar a planilha com o e-mail dela, e preencher `GOOGLE_SHEETS_CREDENTIALS_PATH` / `GOOGLE_SHEET_ID`.
 - [ ] Confirmar com uma chamada de teste real quais são os nomes de campo do hóspede na propriedade (ajustar `FIELD_MAPPING` no `.env` se precisar).
 - [ ] Rodar em modo dry-run com dados reais por um tempo antes de desligar o modo teste.
-- [ ] Liberar espaço em disco em C: (ver aviso acima).

@@ -72,7 +72,9 @@ if reservation:
     col_c.metric("Telefone", guest_phone or "—")
 
     secondary_label = config.sheets.secondary_field_column
-    secondary_default = guest_email or guest_phone
+    secondary_cb_field = config.app.field_mapping.get(secondary_label)
+    secondary_from_cloudbeds = reservation.get(secondary_cb_field, "") if secondary_cb_field else ""
+    secondary_default = secondary_from_cloudbeds or guest_email or guest_phone
     typed_secondary = st.text_input(
         f"Segundo dado pra confirmar o match (planilha usa a coluna '{secondary_label}')",
         value=secondary_default,
@@ -118,16 +120,24 @@ if reservation:
                 "Mais de uma possibilidade — escolha manualmente qual hóspede é o certo, "
                 "ou nenhum se não for nenhum deles."
             )
-            options = {
-                f"{c.row.get(config.sheets.name_column, '?')} "
-                f"(similaridade {c.name_score:.0%}"
-                f"{', segundo dado bate' if c.secondary_match else ''})": c.row
-                for c in match.candidates
-            }
-            labels = ["Nenhum destes"] + list(options.keys())
-            picked = st.radio("Candidatos", labels)
-            if picked != "Nenhum destes":
-                chosen_row = options[picked]
+            def _describe(index: int) -> str:
+                if index == -1:
+                    return "Nenhum destes"
+                c = match.candidates[index]
+                secondary_note = ", segundo dado bate" if c.secondary_match else ""
+                nome = c.row.get(config.sheets.name_column, "?")
+                return (
+                    f"{nome} (similaridade {c.name_score:.0%}{secondary_note}) "
+                    f"— linha {index + 1} da planilha"
+                )
+
+            picked_index = st.radio(
+                "Candidatos",
+                options=[-1, *range(len(match.candidates))],
+                format_func=_describe,
+            )
+            if picked_index != -1:
+                chosen_row = match.candidates[picked_index].row
 
         if chosen_row:
             fields_to_write: dict[str, Any] = {}
