@@ -60,7 +60,16 @@ flowchart LR
 | Lint | ruff |
 | CI | GitHub Actions |
 
-## Rodando localmente
+## Instalando no computador da recepção (Windows)
+
+1. **Instalar o Python**, se ainda não tiver: [python.org/downloads](https://www.python.org/downloads/) — na instalação, marque "Add Python to PATH".
+2. **Baixar este projeto** no computador da recepção: em github.com/ronaldoribeirosm/automacao-recepcao, botão verde "Code" → "Download ZIP", e extrair numa pasta (ex.: `C:\AutomacaoRecepcao`). (Se preferir e tiver Git instalado, `git clone` funciona igual.)
+3. **Criar o arquivo de credenciais**: dentro da pasta, copie `.env.example` e renomeie a cópia pra `.env`. Abra no bloco de notas e preencha `CLOUDBEDS_API_KEY` e `CLOUDBEDS_PROPERTY_ID` com os valores reais — **digite direto ali**, não envie a chave por e-mail/WhatsApp/etc.
+4. **Dar dois cliques em `iniciar.bat`**. Na primeira vez ele demora um pouco (baixando as dependências); depois disso abre em segundos, direto no navegador.
+
+O modo **dry-run** vem ligado por padrão — nenhuma escrita real acontece no Cloudbeds até alguém desligar isso conscientemente na barra lateral, depois de validar que as simulações fazem sentido.
+
+## Rodando localmente (linha de comando)
 
 ```bash
 python -m venv .venv
@@ -72,8 +81,6 @@ copy .env.example .env
 
 streamlit run app.py
 ```
-
-Na barra lateral, o modo **dry-run** vem ligado por padrão — nenhuma escrita real acontece no Cloudbeds até ele ser desligado conscientemente, depois de validar que as simulações fazem sentido.
 
 ## Escopos necessários no Cloudbeds
 
