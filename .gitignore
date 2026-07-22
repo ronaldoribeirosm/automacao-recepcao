@@ -1,0 +1,12 @@
+.env
+credentials/
+log.txt
+*.xlsx
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+.streamlit/secrets.toml
+.vscode/
+.idea/

@@ -1,0 +1,127 @@
+/* Ajustes finos por cima do tema do Streamlit — só transform/opacity/cor,
+   nada de layout property em transição (mantém 60fps e evita reflow). */
+
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --danger: #b3261e;
+  --success: #1b7a43;
+  --warning: #9a6400;
+  --warning-bg: #fdf3d9;
+  --danger-bg: #fbe9e7;
+  --success-bg: #e6f4ea;
+}
+
+/* Botões: feedback de pressão instantâneo — usado dezenas de vezes por turno. */
+.stButton > button,
+.stDownloadButton > button {
+  transition: transform 140ms var(--ease-out), box-shadow 140ms var(--ease-out);
+}
+
+.stButton > button:active,
+.stDownloadButton > button:active {
+  transform: scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .stButton > button:hover,
+  .stDownloadButton > button:hover {
+    box-shadow: 0 1px 2px rgba(16, 33, 31, 0.12);
+  }
+}
+
+/* Faixa de modo (dry-run / produção) — precisa ser impossível de ignorar. */
+.modo-banner {
+  border-radius: 8px;
+  padding: 0.65rem 1rem;
+  font-weight: 600;
+  font-size: 0.92rem;
+  margin-bottom: 1rem;
+  letter-spacing: 0.01em;
+}
+
+.modo-banner--teste {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border: 1px solid rgba(154, 100, 0, 0.25);
+}
+
+.modo-banner--producao {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid rgba(179, 38, 30, 0.25);
+}
+
+/* Tabela de diff "de -> para" antes de qualquer gravação real. */
+.diff-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid rgba(22, 33, 31, 0.08);
+  margin-bottom: 0.4rem;
+}
+
+.diff-row__before {
+  color: #5b6664;
+  text-decoration: line-through;
+  text-decoration-color: rgba(91, 102, 100, 0.5);
+}
+
+.diff-row__after {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.diff-row__arrow {
+  color: #8a9591;
+}
+
+.diff-row__label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8a9591;
+  grid-column: 1 / -1;
+  margin-bottom: 0.15rem;
+}
+
+/* Badges de status do match de hóspede. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.badge--confirmed {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.badge--ambiguous {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.badge--not-found {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+
+/* Números tabulares em colunas de data/quarto — evita "dança" de dígitos. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stButton > button,
+  .stDownloadButton > button {
+    transition: none;
+  }
+}
