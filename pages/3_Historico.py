@@ -13,7 +13,7 @@ import streamlit as st
 
 from core import config
 from core.audit_log import append_log, make_entry
-from core.cloudbeds_client import CloudbedsClient, CloudbedsError
+from core.cloudbeds_client import CloudbedsClient, CloudbedsError, extract_main_guest
 from core.history import count_previous_stays, lookback_start_date
 from core.ui import inject_style, render_diff, render_mode_banner
 
@@ -35,14 +35,9 @@ reservation_id = st.text_input("ID da reserva no Cloudbeds", placeholder="Ex.: 1
 if st.button("Calcular histórico", type="primary", disabled=not reservation_id):
     client = CloudbedsClient(settings=config.cloudbeds)
     try:
-        with st.spinner("Buscando reserva e histórico no Cloudbeds…"):
+        with st.spinner("Buscando reserva no Cloudbeds…"):
             reservation = client.get_reservation(reservation_id)
             existing_notes = client.get_reservation_notes(reservation_id)
-
-            start = lookback_start_date(date.today(), config.app.history_lookback_years)
-            all_reservations = client.get_reservations(
-                check_in_from=start, check_in_to=date.today()
-            )
     except CloudbedsError as exc:
         st.error(f"Erro ao consultar o Cloudbeds: {exc}")
         st.stop()
@@ -51,14 +46,30 @@ if st.button("Calcular histórico", type="primary", disabled=not reservation_id)
         st.error("Reserva não encontrada.")
         st.stop()
 
-    history = count_previous_stays(
-        all_reservations=all_reservations,
-        guest_email=reservation.get("guestEmail", ""),
-        guest_phone=reservation.get("guestPhone", ""),
-        current_reservation_id=reservation_id,
-    )
+    main_guest = extract_main_guest(reservation)
+
+    try:
+        with st.spinner("Buscando histórico de estadias…"):
+            candidate_ids = {
+                g["reservationID"]
+                for g in (
+                    client.get_guest_list(email=main_guest["guestEmail"])
+                    + client.get_guest_list(phone=main_guest["guestPhone"])
+                )
+            }
+            start = lookback_start_date(date.today(), config.app.history_lookback_years)
+            history = count_previous_stays(
+                candidate_reservation_ids=candidate_ids,
+                current_reservation_id=reservation_id,
+                fetch_reservation=client.get_reservation,
+                lookback_start=start,
+            )
+    except CloudbedsError as exc:
+        st.error(f"Erro ao consultar o histórico: {exc}")
+        st.stop()
 
     st.session_state["hist_reservation"] = reservation
+    st.session_state["hist_main_guest"] = main_guest
     st.session_state["hist_existing_notes"] = existing_notes
     st.session_state["hist_result"] = history
 
@@ -66,9 +77,10 @@ reservation = st.session_state.get("hist_reservation")
 history = st.session_state.get("hist_result")
 
 if reservation and history:
+    main_guest = st.session_state["hist_main_guest"]
     st.subheader("Hóspede")
     col_a, col_b = st.columns(2)
-    col_a.metric("Nome", reservation.get("guestName", "—"))
+    col_a.metric("Nome", main_guest["guestName"] or "—")
     col_b.metric("Estadias anteriores encontradas", history.previous_stays)
 
     if history.stay_dates:
@@ -77,7 +89,7 @@ if reservation and history:
 
     existing_notes = st.session_state.get("hist_existing_notes", [])
     existing_text = (
-        "\n".join(n.get("note", "") for n in existing_notes) if existing_notes else ""
+        "\n".join(n.get("reservationNote", "") for n in existing_notes) if existing_notes else ""
     )
     new_note = history.to_note()
 

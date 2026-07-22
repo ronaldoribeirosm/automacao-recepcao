@@ -1,17 +1,21 @@
 """Conta estadias anteriores de um hóspede pra montar a nota da reserva.
 
 Só leitura em Cloudbeds até o momento de gravar a nota (função 3 do projeto).
-Casa hóspedes pelo e-mail ou telefone normalizado, nunca só pelo nome —
-mesma preocupação de `core.matching`.
+
+Descoberta importante contra a API real em 2026-07-22: `getGuestList`
+filtra de verdade no servidor por `guestEmail`/`guestPhone` — muito mais
+rápido e correto do que paginar anos de `getReservations` (a propriedade
+testada tem >10 mil reservas nos últimos 5 anos) e comparar nome/e-mail na
+mão. O casamento continua sendo por e-mail OU telefone exato, nunca só
+pelo nome — mesma preocupação de `core.matching`.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
-
-from core.matching import normalize_secondary
 
 COMPLETED_STATUSES = {"checked_out", "checked-out", "completed"}
 
@@ -34,33 +38,33 @@ class StayHistory:
 
 def count_previous_stays(
     *,
-    all_reservations: list[dict[str, Any]],
-    guest_email: str,
-    guest_phone: str,
+    candidate_reservation_ids: set[str],
     current_reservation_id: str,
+    fetch_reservation: Callable[[str], dict[str, Any]],
+    lookback_start: date | None = None,
 ) -> StayHistory:
-    """Recebe reservas já buscadas (get_reservations com lookback configurado)
-    e conta quantas, além da atual, pertencem ao mesmo hóspede — por e-mail
-    OU telefone normalizado, excluindo a reserva em aberto."""
-    norm_email = normalize_secondary(guest_email)
-    norm_phone = normalize_secondary(guest_phone)
-
+    """`candidate_reservation_ids` já vem pré-filtrado por e-mail/telefone
+    exato (via `CloudbedsClient.get_guest_list`) — aqui só resta excluir a
+    reserva atual, manter só estadias concluídas, e opcionalmente cortar
+    pelo `lookback_start`.
+    """
     stay_dates: list[str] = []
-    for reservation in all_reservations:
-        if str(reservation.get("reservationID")) == str(current_reservation_id):
+    for reservation_id in candidate_reservation_ids:
+        if str(reservation_id) == str(current_reservation_id):
             continue
+
+        reservation = fetch_reservation(reservation_id)
         if str(reservation.get("status", "")).lower() not in COMPLETED_STATUSES:
             continue
 
-        res_email = normalize_secondary(str(reservation.get("guestEmail", "")))
-        res_phone = normalize_secondary(str(reservation.get("guestPhone", "")))
+        start_raw = reservation.get("startDate", "")
+        if not start_raw:
+            continue
+        start = date.fromisoformat(start_raw[:10])
+        if lookback_start and start < lookback_start:
+            continue
 
-        is_same_guest = (norm_email and res_email == norm_email) or (
-            norm_phone and res_phone == norm_phone
-        )
-        if is_same_guest:
-            check_in = reservation.get("checkInDate", "")
-            stay_dates.append(check_in[:10] if check_in else "data desconhecida")
+        stay_dates.append(start.isoformat())
 
     stay_dates.sort()
     return StayHistory(previous_stays=len(stay_dates), stay_dates=stay_dates)

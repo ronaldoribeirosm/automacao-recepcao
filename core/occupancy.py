@@ -2,19 +2,21 @@
 
 Só leitura — nenhuma função aqui grava nada no Cloudbeds.
 
-Formato esperado de cada reserva vinda de `CloudbedsClient.get_reservations`
-(campos usados, o resto é ignorado):
+Formato esperado de cada reserva (a resposta detalhada de
+`CloudbedsClient.get_reservation`, confirmada contra a API real em
+2026-07-22 — o endpoint de lista `getReservations` NÃO traz atribuição de
+quarto, só o `getReservation` individual traz o array `assigned`):
 
     {
         "reservationID": "...",
+        "guestName": "Maria Silva",
         "status": "confirmed",
-        "rooms": [
+        "assigned": [
             {
-                "roomID": "12",
+                "roomID": "12-1",
                 "roomName": "101",
-                "checkInDate": "2026-07-20",
-                "checkOutDate": "2026-07-23",
-                "guestName": "Maria Silva",
+                "startDate": "2026-07-20",
+                "endDate": "2026-07-23",
             },
             ...
         ],
@@ -54,16 +56,16 @@ def build_occupancy_grid(
     for reservation in reservations:
         if str(reservation.get("status", "")).lower() in CANCELLED_STATUSES:
             continue
-        for room in reservation.get("rooms", []):
+        guest_name = reservation.get("guestName", "")
+        for room in reservation.get("assigned", []):
             room_name = room.get("roomName")
             if room_name not in grid.index:
                 continue
             try:
-                check_in = _parse_date(room["checkInDate"])
-                check_out = _parse_date(room["checkOutDate"])
+                check_in = _parse_date(room["startDate"])
+                check_out = _parse_date(room["endDate"])
             except (KeyError, ValueError):
                 continue
-            guest_name = room.get("guestName") or reservation.get("guestName", "")
             for i, day in enumerate(dates):
                 if check_in <= day < check_out:
                     existing = grid.at[room_name, columns[i]]

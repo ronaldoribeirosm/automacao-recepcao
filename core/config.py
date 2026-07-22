@@ -13,13 +13,13 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Coluna da planilha -> campo do hóspede no Cloudbeds. Ajuste em FIELD_MAPPING
-# (.env, JSON) para os nomes reais de campo da propriedade — os nomes abaixo
-# são o ponto de partida e precisam ser confirmados com uma chamada real à
-# API antes de ir pra produção (veja PROGRESSO.md).
+# Coluna da planilha -> campo do hóspede no Cloudbeds. Confirmado contra uma
+# chamada real de getReservation em 2026-07-22 (hóspede principal vem dentro
+# de guestList — ver core.cloudbeds_client.extract_main_guest). Ajustável via
+# FIELD_MAPPING (.env, JSON) se a propriedade usar campo personalizado no lugar.
 DEFAULT_FIELD_MAPPING: dict[str, str] = {
-    "cpf": "guestCPF",
-    "telefone": "guestPhone1",
+    "cpf": "guestDocumentNumber",
+    "telefone": "guestPhone",
     "email": "guestEmail",
     "data_nascimento": "guestBirthdate",
     "endereco": "guestAddress",

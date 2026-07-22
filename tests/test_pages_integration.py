@@ -61,6 +61,27 @@ def button_labeled(at, label):
     return next(b for b in at.button if b.label == label)
 
 
+def make_reservation(*, guest_id, name, email="", phone="", **extra_guest_fields):
+    """Monta uma reserva no formato real do getReservation (guestList aninhado —
+    confirmado contra a API real em 2026-07-22, ver core.cloudbeds_client.extract_main_guest)."""
+    first, _, last = name.partition(" ")
+    return {
+        "guestName": name,
+        "guestEmail": email,
+        "guestList": {
+            guest_id: {
+                "guestID": guest_id,
+                "guestFirstName": first,
+                "guestLastName": last,
+                "guestEmail": email,
+                "guestPhone": phone,
+                "isMainGuest": True,
+                **extra_guest_fields,
+            }
+        },
+    }
+
+
 def test_home_page_renders_without_errors(configured):
     at = AppTest.from_file("app.py")
     at.run()
@@ -68,24 +89,25 @@ def test_home_page_renders_without_errors(configured):
 
 
 def test_ocupacao_page_loads_grid_after_search(configured, monkeypatch):
-    reservations = [
-        {
-            "status": "confirmed",
-            "rooms": [
-                {
-                    "roomID": "1",
-                    "roomName": "101",
-                    "checkInDate": "2026-07-20",
-                    "checkOutDate": "2026-07-23",
-                    "guestName": "Maria Silva",
-                }
-            ],
-        }
-    ]
-    rooms = [{"roomID": "1", "roomName": "101"}]
+    list_item = {
+        "reservationID": "1",
+        "status": "confirmed",
+        "guestName": "Maria Silva",
+        "startDate": "2026-07-20",
+        "endDate": "2026-07-23",
+    }
+    assigned_room = {
+        "roomID": "1",
+        "roomName": "101",
+        "startDate": "2026-07-20",
+        "endDate": "2026-07-23",
+    }
+    detailed = {**list_item, "assigned": [assigned_room]}
+    room = {"roomID": "1", "roomName": "101"}
 
-    monkeypatch.setattr(CloudbedsClient, "get_reservations", lambda self, **kw: reservations)
-    monkeypatch.setattr(CloudbedsClient, "get_rooms", lambda self: rooms)
+    monkeypatch.setattr(CloudbedsClient, "get_reservations", lambda self, **kw: [list_item])
+    monkeypatch.setattr(CloudbedsClient, "get_reservation", lambda self, rid: detailed)
+    monkeypatch.setattr(CloudbedsClient, "get_rooms", lambda self: [room])
 
     at = AppTest.from_file("pages/1_Ocupacao.py")
     at.run()
@@ -97,20 +119,16 @@ def test_ocupacao_page_loads_grid_after_search(configured, monkeypatch):
 
 
 def test_autopreenchimento_confirmed_match_dry_run_writes_log(configured, monkeypatch, tmp_path):
-    reservation = {
-        "guestID": "g1",
-        "guestName": "Joao Pereira",
-        "guestEmail": "joao@example.com",
-        "guestPhone": "11999990000",
-        "guestCPF": "",
-    }
+    reservation = make_reservation(
+        guest_id="g1", name="Joao Pereira", email="joao@example.com", phone="11999990000"
+    )
     sheet_rows = [
         {"nome": "Joao Pereira", "cpf": "111.222.333-44", "email": "joao@example.com"},
     ]
 
     monkeypatch.setattr(CloudbedsClient, "get_reservation", lambda self, rid: reservation)
     monkeypatch.setattr(SheetsClient, "fetch_rows", lambda self: sheet_rows)
-    set_app_settings(monkeypatch, tmp_path, field_mapping={"cpf": "guestCPF"})
+    set_app_settings(monkeypatch, tmp_path, field_mapping={"cpf": "guestDocumentNumber"})
 
     at = AppTest.from_file("pages/2_Autopreenchimento.py")
     at.run()
@@ -130,20 +148,14 @@ def test_autopreenchimento_confirmed_match_dry_run_writes_log(configured, monkey
 
     entries = read_log(config.app.log_file_path)
     assert len(entries) == 1
-    assert entries[0]["field"] == "guestCPF"
+    assert entries[0]["field"] == "guestDocumentNumber"
     assert entries[0]["after"] == "111.222.333-44"
     assert entries[0]["dry_run"] is True
 
 
 def test_autopreenchimento_ambiguous_match_requires_manual_pick(configured, monkeypatch, tmp_path):
     """Dois hóspedes com o mesmo nome — o sistema nunca decide sozinho."""
-    reservation = {
-        "guestID": "g1",
-        "guestName": "Maria da Silva Santos",
-        "guestEmail": "",
-        "guestPhone": "",
-        "guestCPF": "",
-    }
+    reservation = make_reservation(guest_id="g1", name="Maria da Silva Santos")
     sheet_rows = [
         {"nome": "Maria da Silva Santos", "cpf": "111", "email": "maria1@example.com"},
         {"nome": "Maria da Silva Santos", "cpf": "222", "email": "maria2@example.com"},
@@ -151,7 +163,7 @@ def test_autopreenchimento_ambiguous_match_requires_manual_pick(configured, monk
 
     monkeypatch.setattr(CloudbedsClient, "get_reservation", lambda self, rid: reservation)
     monkeypatch.setattr(SheetsClient, "fetch_rows", lambda self: sheet_rows)
-    set_app_settings(monkeypatch, tmp_path, field_mapping={"cpf": "guestCPF"})
+    set_app_settings(monkeypatch, tmp_path, field_mapping={"cpf": "guestDocumentNumber"})
 
     at = AppTest.from_file("pages/2_Autopreenchimento.py")
     at.run()
@@ -174,12 +186,7 @@ def test_autopreenchimento_ambiguous_match_requires_manual_pick(configured, monk
 
 
 def test_autopreenchimento_not_found_never_writes(configured, monkeypatch, tmp_path):
-    reservation = {
-        "guestID": "g1",
-        "guestName": "Zzzzz Wwwww Completamente Diferente",
-        "guestEmail": "",
-        "guestPhone": "",
-    }
+    reservation = make_reservation(guest_id="g1", name="Zzzzz Wwwww Completamente Diferente")
     sheet_rows = [{"nome": "Joao Pereira", "cpf": "111", "email": "joao@example.com"}]
 
     monkeypatch.setattr(CloudbedsClient, "get_reservation", lambda self, rid: reservation)
@@ -199,26 +206,31 @@ def test_autopreenchimento_not_found_never_writes(configured, monkeypatch, tmp_p
 
 
 def test_historico_page_dry_run_writes_note_log(configured, monkeypatch, tmp_path):
-    reservation = {
+    current = {
+        **make_reservation(guest_id="gcur", name="Maria Silva", email="maria@example.com"),
         "reservationID": "current",
-        "guestName": "Maria Silva",
-        "guestEmail": "maria@example.com",
-        "guestPhone": "",
+        "status": "confirmed",
+        "startDate": "2026-07-22",
     }
-    all_reservations = [
-        {
-            "reservationID": "1",
-            "status": "checked_out",
-            "guestEmail": "maria@example.com",
-            "guestPhone": "",
-            "checkInDate": "2025-01-10",
-        },
-        reservation | {"status": "confirmed", "checkInDate": "2026-07-22"},
-    ]
+    previous = {
+        **make_reservation(guest_id="gprev", name="Maria Silva", email="maria@example.com"),
+        "reservationID": "1",
+        "status": "checked_out",
+        "startDate": "2025-01-10",
+    }
+    reservations_by_id = {"current": current, "1": previous}
 
-    monkeypatch.setattr(CloudbedsClient, "get_reservation", lambda self, rid: reservation)
+    monkeypatch.setattr(
+        CloudbedsClient, "get_reservation", lambda self, rid: reservations_by_id[rid]
+    )
     monkeypatch.setattr(CloudbedsClient, "get_reservation_notes", lambda self, rid: [])
-    monkeypatch.setattr(CloudbedsClient, "get_reservations", lambda self, **kw: all_reservations)
+    monkeypatch.setattr(
+        CloudbedsClient,
+        "get_guest_list",
+        lambda self, email="", phone="": (
+            [{"reservationID": "1"}, {"reservationID": "current"}] if email else []
+        ),
+    )
     set_app_settings(monkeypatch, tmp_path)
 
     at = AppTest.from_file("pages/3_Historico.py")

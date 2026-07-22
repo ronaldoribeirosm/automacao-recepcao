@@ -1,5 +1,90 @@
 # PROGRESSO.md
 
+## Sessão 2026-07-22 (parte 3) — validado contra a conta real do hotel
+
+O usuário gerou a API key real do Cloudbeds (propriedade **164564 — Hotel Boutique
+Quebra-Noz**, Campos do Jordão) e ela foi configurada no `.env` local (nunca
+commitado). Isso permitiu, pela primeira vez, testar contra dados reais —
+só leitura e dry-run, nenhuma gravação real foi feita.
+
+### Bugs reais encontrados e corrigidos (a API de verdade difere da documentação)
+
+1. **Paginação de `getReservations` estava quebrada.** O código usava o campo
+   `count` (itens só desta página) como se fosse o total da consulta — a API
+   de verdade devolve `count` (página) e `total` (real) separados. Isso fazia
+   a paginação parar depois da primeira página sempre que ela vinha cheia.
+   Corrigido em `core/cloudbeds_client.py` pra usar `total`.
+2. **`getRooms` vem agrupado por propriedade**, não como lista simples de
+   quartos (`data: [{propertyID, rooms: [...]}]`, mesmo com 1 propriedade só).
+   Corrigido pra achatar isso.
+3. **`getReservation` não tem `guestID`/`guestPhone`/etc. na raiz** — só
+   `guestName` e `guestEmail`. O resto (telefone, documento, data de
+   nascimento, endereço, país, campos personalizados) fica dentro de
+   `guestList`, indexado por guestID. Criado `extract_main_guest()` em
+   `core/cloudbeds_client.py` pra extrair o hóspede principal corretamente;
+   `pages/2_Autopreenchimento.py` e `pages/3_Historico.py` usam isso agora.
+4. **Ocupação usa `assigned` (com `startDate`/`endDate`), não `rooms`
+   (com `checkInDate`/`checkOutDate`)** — e esse array só vem no
+   `getReservation` individual, não na lista. `core/occupancy.py` e
+   `pages/1_Ocupacao.py` reescritos: busca a lista filtrada por data (barato),
+   descarta cancelados, e só detalha (busca `assigned`) os candidatos que
+   realmente sobrepõem a janela — não a conta inteira.
+5. **Nome do campo de nota é `reservationNote`**, não `note` (confirmado
+   lendo notas reais existentes numa reserva). Corrigido em
+   `pages/3_Historico.py`.
+6. **`FIELD_MAPPING` tinha nomes de campo inventados** (`guestCPF`,
+   `guestPhone1`) — corrigido pra `guestDocumentNumber`/`guestPhone`, os
+   nomes reais dentro de `guestList`.
+
+### Redesenho de performance na Função 3 (histórico de estadias)
+
+A ideia original (buscar todas as reservas de N anos e comparar e-mail/
+telefone reserva por reserva) esbarrou na realidade: a propriedade tem
+**mais de 10 mil reservas em 5 anos**, e `getReservations` ignora filtro por
+e-mail/telefone — precisaria paginar tudo (>100 páginas) e ainda detalhar
+cada candidato. Um teste real chegou a estourar 2 minutos sem terminar.
+
+Descoberta que resolveu isso: **`getGuestList` filtra de verdade por
+`guestEmail`/`guestPhone` no servidor** (confirmado com chamada real —
+devolveu exatamente 1 resultado pro e-mail certo). `core/history.py` e
+`pages/3_Historico.py` foram reescritos pra usar isso: busca só os
+hóspedes com aquele e-mail/telefone exato (poucos resultados, quase
+instantâneo) em vez de escanear a propriedade inteira. **Testado contra a
+conta real: de >2 minutos (travado) pra 3,3 segundos.**
+
+### Validado de verdade contra a API real (só leitura, dry-run ligado)
+
+- `getHotels` — descobriu o Property ID (164564) automaticamente.
+- `getReservations` com filtro de data — confirmado que filtra de verdade.
+- `getReservation` individual — estrutura completa inspecionada.
+- `getRooms` — 20 quartos reais listados corretamente.
+- `getReservationNotes` — encontrada e lida uma nota real existente.
+- `getGuestList` com filtro de e-mail/telefone — confirmado filtro real.
+- **Função 1 (Ocupação)** rodada de ponta a ponta no navegador contra a
+  conta real: 33 reservas, 20 quartos, grade de ocupação com nomes reais
+  de hóspedes nos quartos certos. ~17s (33 chamadas de detalhe sequenciais
+  — aceitável, com spinner indicando progresso).
+- **Função 3 (Histórico)** rodada de ponta a ponta contra uma reserva real
+  (Talita Fernandes Picanço e Souza): 3,3s, resultado correto (0 estadias
+  anteriores, é a primeira reserva dela), nota simulada corretamente em
+  dry-run.
+- Corrigido também um aviso de depreciação do Streamlit (`use_container_width`
+  → `width="stretch"`).
+
+### O que ainda NÃO foi validado
+
+- **Função 2 (Autopreenchimento)** não foi testada contra dados reais — falta
+  a credencial do Google Sheets (o usuário ainda não configurou a service
+  account). A parte que já foi validada (buscar reserva real, extrair
+  hóspede principal via `extract_main_guest`) usa o mesmo código já
+  confirmado pelas funções 1 e 3.
+- **Nenhuma gravação real aconteceu** (`dry_run=False` de verdade) — nem
+  `putGuest` nem `postReservationNote` foram chamados de verdade contra a
+  API. Os nomes de parâmetro desses dois endpoints de escrita seguem
+  baseados em documentação pública, não confirmados por uma chamada real.
+  Recomendo testar isso com cuidado (reserva de teste, se possível) antes
+  de desligar o modo dry-run em produção.
+
 ## Sessão 2026-07-22 (parte 2) — verificação end-to-end depois de liberar disco
 
 Espaço em C: foi liberado (de ~67MB pra ~9,5GB livres), o que resolveu o `MemoryError`

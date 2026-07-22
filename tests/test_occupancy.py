@@ -5,25 +5,25 @@ from core.occupancy import build_occupancy_grid
 RESERVATIONS = [
     {
         "status": "confirmed",
-        "rooms": [
+        "guestName": "Maria Silva",
+        "assigned": [
             {
                 "roomID": "1",
                 "roomName": "101",
-                "checkInDate": "2026-07-20",
-                "checkOutDate": "2026-07-23",
-                "guestName": "Maria Silva",
+                "startDate": "2026-07-20",
+                "endDate": "2026-07-23",
             }
         ],
     },
     {
-        "status": "cancelled",
-        "rooms": [
+        "status": "canceled",
+        "guestName": "Reserva Cancelada",
+        "assigned": [
             {
                 "roomID": "2",
                 "roomName": "102",
-                "checkInDate": "2026-07-20",
-                "checkOutDate": "2026-07-22",
-                "guestName": "Reserva Cancelada",
+                "startDate": "2026-07-20",
+                "endDate": "2026-07-22",
             }
         ],
     },

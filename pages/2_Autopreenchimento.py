@@ -13,7 +13,7 @@ import streamlit as st
 
 from core import config
 from core.audit_log import append_log, make_entry
-from core.cloudbeds_client import CloudbedsClient, CloudbedsError
+from core.cloudbeds_client import CloudbedsClient, CloudbedsError, extract_main_guest
 from core.matching import MatchStatus, find_guest_match
 from core.sheets_client import SheetsClient, SheetsError
 from core.ui import inject_style, render_diff, render_match_badge, render_mode_banner
@@ -60,10 +60,11 @@ if st.button("Buscar hóspede", type="primary", disabled=not reservation_id):
 reservation = st.session_state.get("af_reservation")
 
 if reservation:
-    guest_name = reservation.get("guestName", "")
-    guest_email = reservation.get("guestEmail", "")
-    guest_phone = reservation.get("guestPhone", "")
-    guest_id = reservation.get("guestID", "")
+    main_guest = extract_main_guest(reservation)
+    guest_name = main_guest["guestName"]
+    guest_email = main_guest["guestEmail"]
+    guest_phone = main_guest["guestPhone"]
+    guest_id = main_guest["guestID"]
 
     st.subheader("Hóspede na reserva")
     col_a, col_b, col_c = st.columns(3)
@@ -73,7 +74,7 @@ if reservation:
 
     secondary_label = config.sheets.secondary_field_column
     secondary_cb_field = config.app.field_mapping.get(secondary_label)
-    secondary_from_cloudbeds = reservation.get(secondary_cb_field, "") if secondary_cb_field else ""
+    secondary_from_cloudbeds = main_guest.get(secondary_cb_field, "") if secondary_cb_field else ""
     secondary_default = secondary_from_cloudbeds or guest_email or guest_phone
     typed_secondary = st.text_input(
         f"Segundo dado pra confirmar o match (planilha usa a coluna '{secondary_label}')",
@@ -146,7 +147,7 @@ if reservation:
                 new_value = str(chosen_row.get(sheet_col, "")).strip()
                 if not new_value:
                     continue
-                current_value = reservation.get(cb_field, "")
+                current_value = main_guest.get(cb_field, "")
                 if str(current_value).strip() == new_value:
                     continue
                 fields_to_write[cb_field] = new_value
@@ -172,7 +173,7 @@ if reservation:
                             action="autopreenchimento",
                             target=f"reserva {reservation_id} / hóspede {guest_id}",
                             field_name=cb_field,
-                            before=reservation.get(cb_field, ""),
+                            before=main_guest.get(cb_field, ""),
                             after=new_value,
                             dry_run=result.dry_run,
                         )

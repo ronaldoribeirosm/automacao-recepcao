@@ -31,13 +31,17 @@ if not config.cloudbeds.is_configured():
 start_date = st.date_input("Início do período", value=date.today())
 days = st.slider("Quantos dias mostrar", min_value=3, max_value=14, value=7)
 
+MAX_STAY_LOOKBACK_DAYS = 30  # cobre reservas que já entraram antes da janela e seguem hospedadas
+CANCELLED_STATUSES = {"canceled", "cancelled", "no_show", "no-show"}
+
 if st.button("Buscar ocupação", type="primary"):
     client = CloudbedsClient(settings=config.cloudbeds)
+    window_end = start_date + timedelta(days=days)
     try:
-        with st.spinner("Buscando reservas e quartos no Cloudbeds…"):
-            reservations = client.get_reservations(
-                check_in_from=start_date - timedelta(days=days),
-                check_out_to=start_date + timedelta(days=days),
+        with st.spinner("Buscando reservas no Cloudbeds…"):
+            candidates = client.get_reservations(
+                check_in_from=start_date - timedelta(days=MAX_STAY_LOOKBACK_DAYS),
+                check_in_to=window_end,
             )
             rooms = client.get_rooms()
     except CloudbedsError as exc:
@@ -49,19 +53,43 @@ if st.button("Buscar ocupação", type="primary"):
         st.warning("Nenhum quarto retornado pelo Cloudbeds — confira o escopo 'Acomodação (Ler)'.")
         st.stop()
 
+    # getReservations (lista) não traz quarto/datas por quarto — só o
+    # getReservation individual traz o array "assigned". Por isso: filtra
+    # candidatos relevantes na lista (barato) e só então busca o detalhe
+    # de cada um (mais caro), em vez de detalhar as 14 mil reservas da conta.
+    relevant = []
+    for res in candidates:
+        if str(res.get("status", "")).lower() in CANCELLED_STATUSES:
+            continue
+        try:
+            end = date.fromisoformat(res["endDate"][:10])
+        except (KeyError, ValueError):
+            continue
+        if end > start_date:
+            relevant.append(res)
+
+    detailed = []
+    try:
+        with st.spinner(f"Detalhando {len(relevant)} reservas…"):
+            for res in relevant:
+                detailed.append(client.get_reservation(res["reservationID"]))
+    except CloudbedsError as exc:
+        st.error(f"Erro ao detalhar reservas: {exc}")
+        st.stop()
+
     grid = build_occupancy_grid(
-        reservations=reservations,
+        reservations=detailed,
         room_names=room_names,
         start_date=start_date,
         days=days,
     )
 
     st.session_state["occupancy_grid"] = grid
-    st.success(f"{len(reservations)} reservas carregadas, {len(room_names)} quartos.")
+    st.success(f"{len(detailed)} reservas carregadas, {len(room_names)} quartos.")
 
 if "occupancy_grid" in st.session_state:
     grid = st.session_state["occupancy_grid"]
-    st.dataframe(grid, use_container_width=True)
+    st.dataframe(grid, width="stretch")
 
     buffer = BytesIO()
     grid.to_excel(buffer, sheet_name="Ocupação")
